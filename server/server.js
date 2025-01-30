@@ -10,90 +10,103 @@ app.use(cors());
 app.use(bodyParser.json());
 
 // Function to check SPF record
-const checkSPF = (domain) => {
+
+const extractSendingIP = (headers) => {
+  const receivedHeaders = headers
+    .split("\n")
+    .filter((line) => line.toLowerCase().startsWith("received:"));
+  
+  if (receivedHeaders.length === 0) return null;
+
+  const ipv4Match = receivedHeaders[0].match(/\b(?:\d{1,3}\.){3}\d{1,3}\b/); // Match IPv4
+  const ipv6Match = receivedHeaders[0].match(/\b([a-fA-F0-9:]+:+[a-fA-F0-9]+)\b/); // Match IPv6
+
+  return ipv4Match ? ipv4Match[0] : (ipv6Match ? ipv6Match[0] : null);
+};
+
+// Function to check SPF validity
+const checkSPF = (email, sendingIP) => {
   return new Promise((resolve) => {
+    const domain = email.split("@").pop(); // Extract domain from email
+
     dns.resolveTxt(domain, (err, records) => {
-      if (err || !records) return resolve({ valid: false, message: "No SPF record found." });
-
-      const spfRecord = records.find((record) => record.join("").startsWith("v=spf1"));
-      if (spfRecord) {
-        resolve({ valid: true, message: "Valid SPF record found." });
-      } else {
-        resolve({ valid: false, message: "SPF record missing." });
+      if (err || !records || records.length === 0) {
+        return resolve({ spoofed: true, message: "No SPF record found. High risk of spoofing." });
       }
+
+      let highestScore = 0;
+      let bestMatch = null;
+      let authorizedIP = false;
+
+      records.forEach((recordArray) => {
+        const record = recordArray.join("");
+        if (record.includes("v=spf1")) {
+          let score = 0;
+
+          // Higher weight for valid SPF syntax elements
+          if (record.startsWith("v=spf1")) score += 40;
+          if (record.includes("all")) score += 20;
+          if (record.includes("ip4:")) score += 15;
+          if (record.includes("ip6:")) score += 15;
+          if (record.includes("include:")) score += 10;
+
+          if (record.includes(sendingIP)) {
+            authorizedIP = true; // The sending IP is authorized
+          }
+          https://check.spamhaus.org/results?query=google.com
+          if (score > highestScore) {
+            highestScore = score;
+            bestMatch = record;
+          }
+        }
+      });
+
+      if (highestScore > 0) {
+        if (authorizedIP) {
+          return resolve({ spoofed: false, message: "Valid SPF record, IP authorized. Email is genuine.", accuracy: highestScore, record: bestMatch });
+        } else {
+          return resolve({ spoofed: true, message: "Valid SPF record, but sending IP is NOT authorized! Possible spoofing detected.", accuracy: highestScore, record: bestMatch });
+        }
+      }
+
+      resolve({ spoofed: true, message: "SPF record missing. High risk of spoofing." });
     });
   });
 };
 
-// Function to check DKIM record
-const checkDKIM = (selector, domain) => {
-  return new Promise((resolve) => {
-    dns.resolveTxt(`${selector}._domainkey.${domain}`, (err, records) => {
-      if (err || !records) return resolve({ valid: false, message: "No DKIM record found." });
-
-      const dkimRecord = records.find((record) => record.join("").includes("v=DKIM1"));
-      if (dkimRecord) {
-        resolve({ valid: true, message: "Valid DKIM record found." });
-      } else {
-        resolve({ valid: false, message: "DKIM record missing." });
-      }
-    });
-  });
-};
-
-// Function to check DMARC record
-const checkDMARC = (domain) => {
-  return new Promise((resolve) => {
-    dns.resolveTxt(`_dmarc.${domain}`, (err, records) => {
-      if (err || !records) return resolve({ valid: false, message: "No DMARC record found." });
-
-      const dmarcRecord = records.find((record) => record.join("").includes("v=DMARC1"));
-      if (dmarcRecord) {
-        resolve({ valid: true, message: "Valid DMARC record found." });
-      } else {
-        resolve({ valid: false, message: "DMARC record missing." });
-      }
-    });
-  });
-};
-
-// API Endpoint for Email Spoofing Detection
 app.post("/check-email", async (req, res) => {
   const { email, headers } = req.body;
+  console.log("Ping received. Checking email:", email);
 
   if (!email || !headers) {
+    console.log("Missing email or headers");
     return res.status(400).json({ safe: false, message: "Email and headers are required!" });
   }
 
-  // Extract domain from email
-  const domain = email.split("@")[1];
-  if (!domain) {
-    return res.status(400).json({ safe: false, message: "Invalid email format!" });
+  const sendingIP = extractSendingIP(headers);
+  console.log("Extracted Sending IP:", sendingIP);
+
+  if (!sendingIP) {
+    console.log("Failed to extract sending IP");
+    return res.status(400).json({ safe: false, message: "Could not extract sending IP from headers!" });
   }
 
   try {
-    // Perform SPF, DKIM, and DMARC checks
-    const [spfResult, dkimResult, dmarcResult] = await Promise.all([
-      checkSPF(domain),
-      checkDKIM("default", domain), // 'default' selector is commonly used
-      checkDMARC(domain),
-    ]);
+    const spfResult = await checkSPF(email, sendingIP);
+    console.log("SPF Result:", spfResult);
 
-    // Generate result message
-    const results = [spfResult, dkimResult, dmarcResult];
-    const failedChecks = results.filter((r) => !r.valid);
-    let message = "Email is safe. All security checks passed! ✅";
-
-    if (failedChecks.length > 0) {
-      message = `⚠️ Warning! Potential spoofing detected.\n\nIssues:\n${failedChecks.map((r) => r.message).join("\n")}`;
-    }
-
-    res.json({ safe: failedChecks.length === 0, message });
+    return res.json({ 
+      safe: !spfResult.spoofed, 
+      message: spfResult.message, 
+      accuracy: spfResult.accuracy, 
+      record: spfResult.record 
+    });
   } catch (error) {
     console.error("Error validating email:", error);
-    res.status(500).json({ safe: false, message: "Server error. Try again later." });
+    return res.status(500).json({ safe: false, message: "Server error. Try again later." });
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
