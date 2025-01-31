@@ -10,7 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
       navigator.clipboard.writeText(headersText).then(() => {
         document.getElementById("status").textContent = "Headers copied to clipboard!";
       }).catch((err) => {
-        document.getElementById("status").textContent = "Failed to copy headers.";
+        document.getElementById("status").textContent = "Failed tocopy headers.";
         console.error("Failed to copy headers:", err);
       });
     });
