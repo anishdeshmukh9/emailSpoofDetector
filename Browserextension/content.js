@@ -2,8 +2,7 @@
 if (window.location.href.includes("view=om")) {
     console.log("On the 'Show Original' page");
 
-    // Wait for the headers to load
-    setTimeout(() => {
+    function extractHeaders() {
         const headersElement = document.querySelector("#raw_message_text");
 
         if (headersElement) {
@@ -13,19 +12,23 @@ if (window.location.href.includes("view=om")) {
             const headersText = headersElement.innerText;
             console.log("Extracted headers text:", headersText);
 
-            // Optional: You can split or process headersText here if needed
-            const format1 = headersText.split("DOCTYPE")[0];
-            console.log("Formatted headers text:", format1);
+            // Optional: Process headers to remove unwanted content
+            const formattedHeaders = headersText.split("Content-Type:")[0];
+            
+            console.log("Formatted headers text:", formattedHeaders);
 
-            // Send the headers to the popup or background script
+            // Send the headers to the popup script
             chrome.runtime.sendMessage({
                 action: "sendHeaders",
-                headers: format1
+                headers: formattedHeaders
             });
         } else {
             console.error("Headers element not found!");
         }
-    }, 1000); // Delay to allow the headers to load
+    }
+
+    // Run `extractHeaders()` every second
+    setInterval(extractHeaders, 1000);
 } else {
     console.log("Not on the 'Show Original' page");
 }

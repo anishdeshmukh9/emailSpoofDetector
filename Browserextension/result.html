@@ -67,18 +67,17 @@
 <body>
   <div class="container">
     <h1>shieldMail</h1>
-    <textarea id="headers" rows="10" cols="50" readonly></textarea>
-    <button id="copyHeaders" class="btn btn-primary">Copy Headers</button>
-    <button id="requestapi" class="btn btn-danger" >Scan For spoofing </button>
-
+    <div id="headers" > 
+        <p id="showme">Loding......</p>
+    </div>
+   
     <p id="status"></p>
     <div class="security-badge">
       <img src="https://img.icons8.com/fluency/48/security-checked.png" alt="Security Checked">
       <p> <b>you can either copy headers and  go <a href="__myapp">Here</a> or scan directly form here</b></p>
     </div>
   </div>
-  <script src="popup.js"></script>
-  <scipt>
+  <scipt src="presentresults.js">
   </scipt>
 </body>
 </html>

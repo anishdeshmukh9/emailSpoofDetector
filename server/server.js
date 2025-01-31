@@ -107,6 +107,22 @@ app.post("/check-email", async (req, res) => {
   }
 });
 
+app.post("/api/saveHeaders", (req, res) => {
+  const { headers } = req.body;
+
+  if (!headers) {
+      return res.status(400).json({ message: "No headers received" });
+  }
+
+  receivedHeaders = headers; // Store the headers data
+
+  console.log("Received Headers:", receivedHeaders);
+
+  return res.status(200).json({ message: receivedHeaders+"helooo " });
+
+});
+
+
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
